@@ -1,8 +1,10 @@
 import logging
+import asyncio
+import time
+import threading
 from aiogram import Bot, Dispatcher, executor, types
 from os import getenv
 from sys import exit
-import random
 import psycopg2
 import requests
 import json
@@ -10,6 +12,9 @@ from validate_email import validate_email
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from datetime import datetime
+from datetime import timedelta
+import re
 
 class Step(StatesGroup):
     reg_start = State()
@@ -20,6 +25,8 @@ class Step(StatesGroup):
     reg_email = State()
     reg_isSportsman = State()
     reg_gender = State()
+    coordinates = State()
+    repeat_reg = State()
 
 conn = psycopg2.connect(host="localhost", port = 5432, database="CoSport", user="postgres", password="1723") #база данных
 cur = conn.cursor()
@@ -33,6 +40,8 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 # Включаем логирование, чтобы не пропустить важные сообщения
 logging.basicConfig(level=logging.INFO)
 
+regex_nickname = re.compile("^[A-Za-z0-9]+$")
+regex_email = re.compile("^([a-z0-9_-]+\.)*[a-z0-9_-]+@[a-z0-9_-]+(\.[a-z0-9_-]+)*\.[a-z]{2,6}$")
 
 registr_arr = []
 
@@ -57,48 +66,41 @@ async def add(message):
 dp.register_message_handler(add, commands="add")
 
 
-async def cmd_phonenumber(message):
-    global registr_arr
-    registr_arr = []
+async def cmd_phonenumber(message, state):
     keyboard = types.ReplyKeyboardMarkup()
     button_1 = types.KeyboardButton(text="Авторизоваться по номеру телефона", request_contact=True)
     keyboard.add(button_1)
+    await state.finish()
     await message.answer("Нажмите на кнопку, чтобы подтвердить передачу номера телефона", reply_markup=keyboard)
 dp.register_message_handler(cmd_phonenumber, commands="start")
+dp.register_message_handler(cmd_phonenumber, state=Step.repeat_reg)
 
 async def autorization(message):
     phone_number = str(message.contact.phone_number)
-    #print(phone_number)
     zapros = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Phone=' + phone_number
     response = requests.get(zapros)
     response1 = response.text
     response1 = response1.replace("[", "")
     response1 = response1.replace("]", "")
-    #response2 = json.loads(response1)
     if response1 != "":
         response2 = json.loads(response1)
         Name = response2["Name"]
         keyboard = types.ReplyKeyboardMarkup()
-        button_1 = types.KeyboardButton(text="Создать команду")
+        button_1 = types.KeyboardButton(text="Передать геопозицию", request_location=True)
         keyboard.add(button_1)
-        button_2 = types.KeyboardButton(text="Мои команды")
-        keyboard.add(button_2)
-        button_3 = types.KeyboardButton(text="Создать мероприятие")
-        keyboard.add(button_3)
-        button_4 = types.KeyboardButton(text="Мои мероприятия")
-        keyboard.add(button_4)
-        button_5 = types.KeyboardButton(text="Найти мероприятие")
-        keyboard.add(button_5)
-        button_6 = types.KeyboardButton(text="Настройки")
-        keyboard.add(button_6)
         await message.answer("Здравствуйте, " + Name + "!", reply_markup=keyboard)
-        await message.answer("id: " + str(message.from_user.id))
+        await message.answer("Пожалуйста, передайте вашу геопозицию, чтобы мы могли предлагать вам ближайшие спортплощадки.")
+        await message.answer("Вы всегда можете обновить свои координаты в Настройках, чтобы получать наиболее актуальную информацию.")
+
     else:
         keyboard = types.ReplyKeyboardMarkup()
         button_1 = types.KeyboardButton(text="Зарегистрироваться!")
         keyboard.add(button_1)
-        registr_arr.append(phone_number)
 
+        time = datetime.now()
+
+        registr_arr.append([str(message.from_user.id), time, phone_number]) ###############################
+        print(registr_arr)
 
         zap = "insert into Users (phone, userid) values ('" + phone_number + "'" + ", '" + str(message.from_user.id) + "')"
         cur.execute(zap)
@@ -110,66 +112,79 @@ dp.register_message_handler(autorization, content_types=["contact"])
 
 async def registration(message, state):
     keyboard = types.ReplyKeyboardRemove()
-    #global phone_number
     await state.finish()
     await Step.reg_nickname.set()
-    await message.answer("Введите Nickname", reply_markup=keyboard)
+    await message.answer("Введите Nickname\nNickname может содержать только цифры и буквы латинского алфавита", reply_markup=keyboard)
 dp.register_message_handler(registration, state=Step.reg_start)
 
 async def registr_first_step(message: types.Message, state):
     global registr_arr
-    nickname = ""
     cont = False
     circle = True
     nickname = message.text
     nickname = nickname.lower()
-    zapros = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=' + nickname
-    response = requests.get(zapros)
-    response1 = response.text
-    response1 = response1.replace("[", "")
-    response1 = response1.replace("]", "")
-    if response1 == "":
-        cont = True
-        circle = False
-    if circle:
-        for i in range(1, 10):
-            #nickname = message.text + '#' + str(i)
-            nickname = message.text + str(i)
-            nickname = nickname.lower()
-            zapros = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=' + nickname
-            #print(zapros)
-            response = requests.get(zapros)
-            response1 = response.text
-            response1 = response1.replace("[", "")
-            response1 = response1.replace("]", "")
-            #print(response1 + "         aboba")
-            if response1 == "":
-                cont = True
-                break
-            if i == 9:
-                await message.answer("Такой Nickname уже занят. Пожалуйста, выберите другой.")
-                await message.answer("Введите Nickname.")
+    if regex_nickname.findall(nickname) != []:
+        zapros = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=' + nickname
+        response = requests.get(zapros)
+        response1 = response.text
+        response1 = response1.replace("[", "")
+        response1 = response1.replace("]", "")
+        if response1 == "":
+            cont = True
+            circle = False
+        if circle:
+            for i in range(1, 10):
+                nickname = message.text + str(i)
+                nickname = nickname.lower()
+                zapros = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=' + nickname
+                response = requests.get(zapros)
+                response1 = response.text
+                response1 = response1.replace("[", "")
+                response1 = response1.replace("]", "")
+                if response1 == "":
+                    cont = True
+                    break
+                if i == 9:
+                    await message.answer("Такой Nickname уже занят. Пожалуйста, выберите другой.")
+                    await message.answer("Введите Nickname\nNickname может содержать только цифры и буквы латинского алфавита")
+                    await state.finish()
+                    await Step.reg_nickname.set()
+                    break
+        if cont:
+            next = False
+            for i in range(0, len(registr_arr)):
+                if registr_arr[i][0] == str(message.from_user.id):
+                    registr_arr[i].append(nickname)
+                    registr_arr[i][1] = datetime.now()
+                    next = True
+                    print(registr_arr)
+                    break
+            if next:
+                zap = "update Users set nickname = '" + nickname + "' where userid = '" + str(message.from_user.id) + "'"
+                cur.execute(zap)
+                conn.commit()
+
+                await message.answer("Ваш Nickname - " + nickname)
+                await message.answer("Введите пароль\nВнимание! Пароль должен содержать не менее 6 символов!")
                 await state.finish()
-                await Step.reg_nickname.set()
-                break
-    if cont:
-        registr_arr.append(nickname)
-
-        zap = "update Users set nickname = '" + nickname + "' where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
-
-        await message.answer("Ваш Nickname - " + nickname)
-        await message.answer("Введите пароль\nВнимание! Пароль должен содержать не менее 6 символов!")
+                await Step.reg_pass.set()
+            else:
+                await state.finish()
+                keyboard = types.ReplyKeyboardMarkup()
+                button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+                keyboard.add(button_1)
+                await message.answer("С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.", reply_markup=keyboard)
+                await Step.repeat_reg.set()
+    else:
         await state.finish()
-        await Step.reg_pass.set()
+        await Step.reg_nickname.set()
+        await message.answer("Введён некорректный Nickname. Повторите попытку ввода.")
 dp.register_message_handler(registr_first_step, state=Step.reg_nickname)
 
 async def registr_second_step(message: types.Message, state):
     global registr_arr
     hasBeenRepeated = False
     pas = message.text
-    #print(pas)
     repeat = False
     if len(pas) < 6:
         await state.finish()
@@ -182,10 +197,25 @@ async def registr_second_step(message: types.Message, state):
         cur.execute(zap)
         conn.commit()
 
-        registr_arr.append(message.text)
-        await message.answer("Введите имя")
-        await state.finish()
-        await Step.reg_name.set()
+        next = False
+        for i in range(0, len(registr_arr)):
+            if registr_arr[i][0] == str(message.from_user.id):
+                registr_arr[i].append(message.text)
+                registr_arr[i][1] = datetime.now()
+                next = True
+                print(registr_arr)
+                break
+        if next:
+            await message.answer("Введите имя")
+            await state.finish()
+            await Step.reg_name.set()
+        else:
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+            keyboard.add(button_1)
+            await message.answer("С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.", reply_markup=keyboard)
+            await Step.repeat_reg.set()
         hasBeenRepeated = False
     if hasBeenRepeated:
         await message.answer('Введенный пароль не соответствует требованиям. Пожалуйста, повторите попытку.')
@@ -198,30 +228,63 @@ async def registr_third_step(message: types.Message, state):
     cur.execute(zap)
     conn.commit()
 
-    registr_arr.append(message.text)
-    await message.answer("Введите фамилию")
-    await state.finish()
-    await Step.reg_surname.set()
+    next = False
+    for i in range(0, len(registr_arr)):
+        if registr_arr[i][0] == str(message.from_user.id):
+            registr_arr[i].append(message.text)
+            registr_arr[i][1] = datetime.now()
+            next = True
+            print(registr_arr)
+            break
+    if next:
+        await message.answer("Введите фамилию")
+        await state.finish()
+        await Step.reg_surname.set()
+    else:
+        await state.finish()
+        keyboard = types.ReplyKeyboardMarkup()
+        button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+        keyboard.add(button_1)
+        await message.answer(
+            "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+            reply_markup=keyboard)
+        await Step.repeat_reg.set()
 dp.register_message_handler(registr_third_step, state=Step.reg_name)
 
 async def registr_fourth_step(message: types.Message, state):
     global registr_arr
-    registr_arr.append(message.text)
-
-    zap = "update Users set surname = '" + message.text + "' where userid = '" + str(message.from_user.id) + "'"
-    cur.execute(zap)
-    conn.commit()
-
-    await message.answer("Введите E-mail")
-    await state.finish()
-    await Step.reg_email.set()
+    #registr_arr.append(message.text)
+    next = False
+    for i in range(0, len(registr_arr)):
+        if registr_arr[i][0] == str(message.from_user.id):
+            registr_arr[i].append(message.text)
+            registr_arr[i][1] = datetime.now()
+            next = True
+            print(registr_arr)
+            break
+    if next:
+        zap = "update Users set surname = '" + message.text + "' where userid = '" + str(message.from_user.id) + "'"
+        cur.execute(zap)
+        conn.commit()
+        await message.answer("Введите E-mail")
+        await state.finish()
+        await Step.reg_email.set()
+    else:
+        await state.finish()
+        keyboard = types.ReplyKeyboardMarkup()
+        button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+        keyboard.add(button_1)
+        await message.answer(
+            "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+            reply_markup=keyboard)
+        await Step.repeat_reg.set()
 dp.register_message_handler(registr_fourth_step, state=Step.reg_surname)
 
 async def registr_fifth_step(message: types.Message, state):
     global registr_arr
     email = message.text
     email = email.lower()
-    if validate_email(email) == False:
+    if regex_email.findall(email) == []:
         await message.answer("Некорректно введен E-mail. Пожалуйста, повторите попытку ввода.")
         await state.finish()
         await Step.reg_email.set()
@@ -236,44 +299,92 @@ async def registr_fifth_step(message: types.Message, state):
             await state.finish()
             await Step.reg_email.set()
         else:
-            registr_arr.append(email)
+            next = False
+            for i in range(0, len(registr_arr)):
+                if registr_arr[i][0] == str(message.from_user.id):
+                    registr_arr[i].append(email)
+                    registr_arr[i][1] = datetime.now()
+                    next = True
+                    print(registr_arr)
+                    break
+            if next:
+                zap = "update Users set email = '" + email + "' where userid = '" + str(message.from_user.id) + "'"
+                cur.execute(zap)
+                conn.commit()
 
-            zap = "update Users set email = '" + email + "' where userid = '" + str(message.from_user.id) + "'"
-            cur.execute(zap)
-            conn.commit()
-
-            keyboard = types.ReplyKeyboardMarkup()
-            button_1 = types.KeyboardButton(text="Мужской")
-            keyboard.add(button_1)
-            button_2 = types.KeyboardButton(text="Женский")
-            keyboard.add(button_2)
-            await message.answer("При помощи кнопок укажите ваш пол", reply_markup=keyboard)
-            await state.finish()
-            await Step.reg_gender.set()
+                keyboard = types.ReplyKeyboardMarkup()
+                button_1 = types.KeyboardButton(text="Мужской")
+                keyboard.add(button_1)
+                button_2 = types.KeyboardButton(text="Женский")
+                keyboard.add(button_2)
+                await message.answer("При помощи кнопок укажите ваш пол", reply_markup=keyboard)
+                await state.finish()
+                await Step.reg_gender.set()
+            else:
+                await state.finish()
+                keyboard = types.ReplyKeyboardMarkup()
+                button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+                keyboard.add(button_1)
+                await message.answer(
+                    "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+                    reply_markup=keyboard)
+                await Step.repeat_reg.set()
 dp.register_message_handler(registr_fifth_step, state=Step.reg_email)
 
 async def registr_sixth_step(message: types.Message, state):
     global registr_arr
     cont = False
     if message.text == "Мужской":
-        registr_arr.append("Мужчина")
+        next = False
+        for i in range(0, len(registr_arr)):
+            if registr_arr[i][0] == str(message.from_user.id):
+                registr_arr[i].append("М")
+                registr_arr[i][1] = datetime.now()
+                next = True
+                print(registr_arr)
+                break
+        if next:
+            zap = "update Users set gender = '" + "М" + "' where userid = '" + str(message.from_user.id) + "'"
+            cur.execute(zap)
+            conn.commit()
 
-        zap = "update Users set gender = '" + "М" + "' where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
-
-        cont = True
+            cont = True
+        else:
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+            keyboard.add(button_1)
+            await message.answer(
+                "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+                reply_markup=keyboard)
+            await Step.repeat_reg.set()
     elif message.text == "Женский":
-        registr_arr.append("Женщина")
+        next = False
+        for i in range(0, len(registr_arr)):
+            if registr_arr[i][0] == str(message.from_user.id):
+                registr_arr[i].append("Ж")
+                registr_arr[i][1] = datetime.now()
+                next = True
+                print(registr_arr)
+                break
+        if next:
+            zap = "update Users set gender = '" + "Ж" + "' where userid = '" + str(message.from_user.id) + "'"
+            cur.execute(zap)
+            conn.commit()
 
-        zap = "update Users set gender = '" + "Ж" + "' where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
-
-        cont = True
+            cont = True
+        else:
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+            keyboard.add(button_1)
+            await message.answer(
+                "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+                reply_markup=keyboard)
+            await Step.repeat_reg.set()
     else:
         await state.finish()
-        await Step.reg_isSportsman.set()
+        await Step.reg_gender.set()
         keyboard = types.ReplyKeyboardMarkup()
         button_1 = types.KeyboardButton(text="Мужской")
         keyboard.add(button_1)
@@ -294,22 +405,55 @@ dp.register_message_handler(registr_sixth_step, state=Step.reg_gender)
 async def registr_seventh_step(message: types.Message, state):
     global registr_arr
     cont = False
+    pos = None
     if message.text == "Да":
-        registr_arr.append(True)
+        next = False
+        for i in range(0, len(registr_arr)):
+            if registr_arr[i][0] == str(message.from_user.id):
+                registr_arr[i].append(True)
+                registr_arr[i][1] = datetime.now()
+                next = True
+                print(registr_arr)
+                break
+        if next:
+            zap = "update Users set sportsman = " + "True" + " where userid = '" + str(message.from_user.id) + "'"
+            cur.execute(zap)
+            conn.commit()
 
-        zap = "update Users set sport = " + "True" + " where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
-
-        cont = True
+            cont = True
+        else:
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+            keyboard.add(button_1)
+            await message.answer(
+                "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+                reply_markup=keyboard)
+            await Step.repeat_reg.set()
     elif message.text == "Нет":
-        registr_arr.append(False)
+        next = False
+        for i in range(0, len(registr_arr)):
+            if registr_arr[i][0] == str(message.from_user.id):
+                registr_arr[i].append(False)
+                registr_arr[i][1] = datetime.now()
+                next = True
+                print(registr_arr)
+                break
+        if next:
+            zap = "update Users set sportsman = " + "False" + " where userid = '" + str(message.from_user.id) + "'"
+            cur.execute(zap)
+            conn.commit()
 
-        zap = "update Users set sport = " + "False" + " where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
-
-        cont = True
+            cont = True
+        else:
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
+            keyboard.add(button_1)
+            await message.answer(
+                "С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.",
+                reply_markup=keyboard)
+            await Step.repeat_reg.set()
     else:
         await state.finish()
         await Step.reg_isSportsman.set()
@@ -322,33 +466,81 @@ async def registr_seventh_step(message: types.Message, state):
     if cont:
         await state.finish()
         keyboard = types.ReplyKeyboardMarkup()
-        button_1 = types.KeyboardButton(text="Создать команду")
+        button_1 = types.KeyboardButton(text="Передать геопозицию", request_location=True)
         keyboard.add(button_1)
-        button_2 = types.KeyboardButton(text="Мои команды")
-        keyboard.add(button_2)
-        button_3 = types.KeyboardButton(text="Создать мероприятие")
-        keyboard.add(button_3)
-        button_4 = types.KeyboardButton(text="Мои мероприятия")
-        keyboard.add(button_4)
-        button_5 = types.KeyboardButton(text="Найти мероприятие")
-        keyboard.add(button_5)
-        button_6 = types.KeyboardButton(text="Настройки")
-        keyboard.add(button_6)
-        await message.answer(registr_arr, reply_markup=keyboard)
-        #print(registr_arr[0])
-        requests.post('http://167.172.35.241/CSDB/Users/?Content-Type=application/json', data={'Phone':registr_arr[0], 'Nickname':registr_arr[1], 'Password':registr_arr[2], 'Name':registr_arr[3], 'Surname':registr_arr[4], 'Email':registr_arr[5], 'Gender':registr_arr[6], 'Profsportman':registr_arr[7]})
         await message.answer("Вы успешно зарегистрировались на сервисе CoSport!", reply_markup=keyboard)
+        await message.answer("Пожалуйста, передайте вашу геопозицию, чтобы мы могли предлагать вам ближайшие спортплощадки.")
+        await message.answer("Вы всегда можете обновить свои координаты в Настройках, чтобы получать наиболее актуальную информацию.")
+
+        for i in range(0, len(registr_arr)):
+
+            if registr_arr[i][0] == str(message.from_user.id):
+                pos = i
+                break
+        print("Переданный массив")
+        print(registr_arr)
+
+        requests.post('http://167.172.35.241/CSDB/Users/?Content-Type=application/json', data={'Tg_id':registr_arr[pos][0],'Phone':registr_arr[pos][2], 'Nickname':registr_arr[pos][3], 'Password':registr_arr[pos][4], 'Name':registr_arr[pos][5], 'Surname':registr_arr[pos][6], 'Email':registr_arr[pos][7], 'Gender':registr_arr[pos][8], 'Profsportman':registr_arr[pos][9]})
+        registr_arr.pop(pos)
+        print("Массив после чистки")
+        print(registr_arr)
 dp.register_message_handler(registr_seventh_step, state=Step.reg_isSportsman)
 
 
+async def settings(message):
+    keyboard = types.ReplyKeyboardMarkup()
+    button_1 = types.KeyboardButton(text="Обновить геопозицию", request_location=True)
+    keyboard.add(button_1)
+    await message.answer("При помощи кнопок выберите интересующий вас пункт меню", reply_markup=keyboard)
+dp.register_message_handler(settings, Text(equals="⚙ Настройки ⚙"))
 
 
+async def get_coordinates(message: types.location, state):
+    keyboard = types.ReplyKeyboardMarkup()
+    button_1 = types.KeyboardButton(text="Создать команду")
+    keyboard.add(button_1)
+    button_2 = types.KeyboardButton(text="Мои команды")
+    keyboard.add(button_2)
+    button_3 = types.KeyboardButton(text="Создать мероприятие")
+    keyboard.add(button_3)
+    button_4 = types.KeyboardButton(text="Мои мероприятия")
+    keyboard.add(button_4)
+    button_5 = types.KeyboardButton(text="Найти мероприятие")
+    keyboard.add(button_5)
+    button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+    keyboard.add(button_6)
+    await message.answer("Широта: " + str(message.location.latitude) + "\nДолгота: " + str(message.location.longitude), reply_markup=keyboard)
+dp.register_message_handler(get_coordinates, content_types=["location"])
 
 
-
-
+check_time = datetime.strptime('2021-07-14 17:13:10.000000', '%Y-%m-%d %H:%M:%S.%f')
+def clear_reg_array():
+    global check_time
+    global registr_arr
+    while True:
+        time.sleep(3)
+        secs = check_time - datetime.now()
+        secs = secs.seconds
+        print(secs)
+        if secs < 10:
+            length = len(registr_arr)
+            print("До изменений")
+            print(registr_arr)
+            a = False
+            for i in range(0, length):
+                if a:
+                    i = i - 1
+                    length = length - 1
+                a = False
+                if (datetime.now() - registr_arr[i][1]).days > 1:
+                    print((datetime.now() - registr_arr[i][1]).days)
+                    registr_arr.pop(i)
+                    a = True
+                    print(registr_arr)
 
 
 if __name__ == "__main__":
     # Запуск бота
+    x = threading.Thread(target=clear_reg_array)
+    x.start()
     executor.start_polling(dp, skip_updates=True)
