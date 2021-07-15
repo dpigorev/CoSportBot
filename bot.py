@@ -543,7 +543,7 @@ async def get_coordinates(message: types.location, state):
 dp.register_message_handler(get_coordinates, content_types=["location"])
 
 
-check_time = datetime.strptime('2021-07-14 17:13:10.000000', '%Y-%m-%d %H:%M:%S.%f')
+check_time = datetime.strptime('2021-07-14 04:00:00.000000', '%Y-%m-%d %H:%M:%S.%f')
 def clear_reg_array():
     global check_time
     global registr_arr
