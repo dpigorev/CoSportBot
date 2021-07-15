@@ -37,6 +37,7 @@ if not bot_token:
 
 bot = Bot(token=bot_token)
 dp = Dispatcher(bot, storage=MemoryStorage())
+
 # Включаем логирование, чтобы не пропустить важные сообщения
 logging.basicConfig(level=logging.INFO)
 
@@ -99,7 +100,7 @@ async def autorization(message):
 
         time = datetime.now()
 
-        registr_arr.append([str(message.from_user.id), time, phone_number]) ###############################
+        registr_arr.append([str(message.from_user.id), time, phone_number])
         print(registr_arr)
 
         zap = "insert into Users (phone, userid) values ('" + phone_number + "'" + ", '" + str(message.from_user.id) + "')"
@@ -107,7 +108,7 @@ async def autorization(message):
         conn.commit()
 
         await Step.reg_start.set()
-        await message.answer("Вы не зарегистрированны на нашем сервисе. Нажмите на кнопку 'Зарегистрироваться!' чтобы пройти регистрацию. ", reply_markup=keyboard)
+        await message.answer("Вы не зарегистрированы на нашем сервисе. Нажмите на кнопку 'Зарегистрироваться!' чтобы пройти регистрацию. ", reply_markup=keyboard)
 dp.register_message_handler(autorization, content_types=["contact"])
 
 async def registration(message, state):
@@ -477,13 +478,42 @@ async def registr_seventh_step(message: types.Message, state):
             if registr_arr[i][0] == str(message.from_user.id):
                 pos = i
                 break
-        print("Переданный массив")
-        print(registr_arr)
 
-        requests.post('http://167.172.35.241/CSDB/Users/?Content-Type=application/json', data={'Tg_id':registr_arr[pos][0],'Phone':registr_arr[pos][2], 'Nickname':registr_arr[pos][3], 'Password':registr_arr[pos][4], 'Name':registr_arr[pos][5], 'Surname':registr_arr[pos][6], 'Email':registr_arr[pos][7], 'Gender':registr_arr[pos][8], 'Profsportman':registr_arr[pos][9]})
-        registr_arr.pop(pos)
-        print("Массив после чистки")
-        print(registr_arr)
+        zapros1 = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Phone=' + registr_arr[pos][2]
+        zapros2 = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=' + registr_arr[pos][3]
+        zapros3 = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Email=' + registr_arr[pos][7]
+        response1 = requests.get(zapros1)
+        response2 = requests.get(zapros2)
+        response3 = requests.get(zapros3)
+        response11 = response1.text
+        response11 = response11.replace("[", "")
+        response11 = response11.replace("]", "")
+        response21 = response2.text
+        response21 = response21.replace("[", "")
+        response21 = response21.replace("]", "")
+        response31 = response3.text
+        response31 = response31.replace("[", "")
+        response31 = response31.replace("]", "")
+
+        if response11 == "" and response21 == "" and response31 == "":
+            print("Переданный массив")
+            print(registr_arr)
+
+            requests.post('http://167.172.35.241/CSDB/Users/?Content-Type=application/json',
+                          data={'Tg_id': registr_arr[pos][0], 'Phone': registr_arr[pos][2],
+                                'Nickname': registr_arr[pos][3], 'Password': registr_arr[pos][4],
+                                'Name': registr_arr[pos][5], 'Surname': registr_arr[pos][6],
+                                'Email': registr_arr[pos][7], 'Gender': registr_arr[pos][8],
+                                'Profsportman': registr_arr[pos][9]})
+            registr_arr.pop(pos)
+            print("Массив после чистки")
+            print(registr_arr)
+        else:
+            await Step.repeat_reg.set()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Повторить регистрацию")
+            keyboard.add(button_1)
+            await message.answer("Пользователь с таким номером телефона/Nickname/Email уже зарегистрирован.\nПожалуйста, повторите попытку регистрации",reply_markup=keyboard)
 dp.register_message_handler(registr_seventh_step, state=Step.reg_isSportsman)
 
 
@@ -522,7 +552,7 @@ def clear_reg_array():
         secs = check_time - datetime.now()
         secs = secs.seconds
         print(secs)
-        if secs < 10:
+        if secs < 3:
             length = len(registr_arr)
             print("До изменений")
             print(registr_arr)
