@@ -43,6 +43,7 @@ logging.basicConfig(level=logging.INFO)
 
 regex_nickname = re.compile("^[A-Za-z0-9]+$")
 regex_email = re.compile("^([a-z0-9_-]+\.)*[a-z0-9_-]+@[a-z0-9_-]+(\.[a-z0-9_-]+)*\.[a-z]{2,6}$")
+regex_pas = re.compile("(?=.*[0-9])(?=.*[!@#$%^&_*])(?=.*[a-z])(?=.*[A-Z])[0-9a-zA-Z!@#$%^_&*]{8,}")
 
 registr_arr = []
 
@@ -166,7 +167,7 @@ async def registr_first_step(message: types.Message, state):
                 conn.commit()
 
                 await message.answer("Ваш Nickname - " + nickname)
-                await message.answer("Введите пароль\nВнимание! Пароль должен содержать не менее 6 символов!")
+                await message.answer("Введите пароль\nВнимание! Пароль должен содержать не менее 8 символов, при этом не менее одного строчного и прописного символа, одной цифры и одного спецсимвола!")
                 await state.finish()
                 await Step.reg_pass.set()
             else:
@@ -187,7 +188,7 @@ async def registr_second_step(message: types.Message, state):
     hasBeenRepeated = False
     pas = message.text
     repeat = False
-    if len(pas) < 6:
+    if regex_pas.findall(pas) == []:
         await state.finish()
         await Step.reg_pass.set()
         repeat = True
