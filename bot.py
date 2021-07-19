@@ -1,19 +1,15 @@
 import logging
-import asyncio
 import time
 import threading
 from aiogram import Bot, Dispatcher, executor, types
 from os import getenv
 from sys import exit
-import psycopg2
 import requests
 import json
-from validate_email import validate_email
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from datetime import datetime
-from datetime import timedelta
 import re
 
 class Step(StatesGroup):
@@ -28,8 +24,6 @@ class Step(StatesGroup):
     coordinates = State()
     repeat_reg = State()
 
-conn = psycopg2.connect(host="localhost", port = 5432, database="CoSport", user="postgres", password="1723") #база данных
-cur = conn.cursor()
 
 bot_token = getenv("BOT_TOKEN")
 if not bot_token:
@@ -37,7 +31,6 @@ if not bot_token:
 
 bot = Bot(token=bot_token)
 dp = Dispatcher(bot, storage=MemoryStorage())
-
 # Включаем логирование, чтобы не пропустить важные сообщения
 logging.basicConfig(level=logging.INFO)
 
@@ -104,10 +97,6 @@ async def autorization(message):
         registr_arr.append([str(message.from_user.id), time, phone_number])
         print(registr_arr)
 
-        zap = "insert into Users (phone, userid) values ('" + phone_number + "'" + ", '" + str(message.from_user.id) + "')"
-        cur.execute(zap)
-        conn.commit()
-
         await Step.reg_start.set()
         await message.answer("Вы не зарегистрированы на нашем сервисе. Нажмите на кнопку 'Зарегистрироваться!' чтобы пройти регистрацию. ", reply_markup=keyboard)
 dp.register_message_handler(autorization, content_types=["contact"])
@@ -162,10 +151,6 @@ async def registr_first_step(message: types.Message, state):
                     print(registr_arr)
                     break
             if next:
-                zap = "update Users set nickname = '" + nickname + "' where userid = '" + str(message.from_user.id) + "'"
-                cur.execute(zap)
-                conn.commit()
-
                 await message.answer("Ваш Nickname - " + nickname)
                 await message.answer("Введите пароль\nВнимание! Пароль должен содержать не менее 8 символов, при этом не менее одного строчного и прописного символа, одной цифры и одного спецсимвола!")
                 await state.finish()
@@ -185,20 +170,14 @@ dp.register_message_handler(registr_first_step, state=Step.reg_nickname)
 
 async def registr_second_step(message: types.Message, state):
     global registr_arr
-    hasBeenRepeated = False
     pas = message.text
     repeat = False
     if regex_pas.findall(pas) == []:
         await state.finish()
         await Step.reg_pass.set()
         repeat = True
-        hasBeenRepeated = True
-    if repeat == False:
-
-        zap = "update Users set password = '" + pas + "' where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
-
+        await message.answer('Введенный пароль не соответствует требованиям. Пожалуйста, повторите попытку.')
+    else:
         next = False
         for i in range(0, len(registr_arr)):
             if registr_arr[i][0] == str(message.from_user.id):
@@ -218,18 +197,10 @@ async def registr_second_step(message: types.Message, state):
             keyboard.add(button_1)
             await message.answer("С момента начала регистрации прошло более 1 дня. Пожалуйста, повторите регистрацию или авторизуйтесь в сервисе, если вы уже зарегистрированы.", reply_markup=keyboard)
             await Step.repeat_reg.set()
-        hasBeenRepeated = False
-    if hasBeenRepeated:
-        await message.answer('Введенный пароль не соответствует требованиям. Пожалуйста, повторите попытку.')
 dp.register_message_handler(registr_second_step, state=Step.reg_pass)
 
 async def registr_third_step(message: types.Message, state):
     global registr_arr
-
-    zap = "update Users set name = '" + message.text + "' where userid = '" + str(message.from_user.id) + "'"
-    cur.execute(zap)
-    conn.commit()
-
     next = False
     for i in range(0, len(registr_arr)):
         if registr_arr[i][0] == str(message.from_user.id):
@@ -255,7 +226,6 @@ dp.register_message_handler(registr_third_step, state=Step.reg_name)
 
 async def registr_fourth_step(message: types.Message, state):
     global registr_arr
-    #registr_arr.append(message.text)
     next = False
     for i in range(0, len(registr_arr)):
         if registr_arr[i][0] == str(message.from_user.id):
@@ -265,9 +235,6 @@ async def registr_fourth_step(message: types.Message, state):
             print(registr_arr)
             break
     if next:
-        zap = "update Users set surname = '" + message.text + "' where userid = '" + str(message.from_user.id) + "'"
-        cur.execute(zap)
-        conn.commit()
         await message.answer("Введите E-mail")
         await state.finish()
         await Step.reg_email.set()
@@ -310,10 +277,6 @@ async def registr_fifth_step(message: types.Message, state):
                     print(registr_arr)
                     break
             if next:
-                zap = "update Users set email = '" + email + "' where userid = '" + str(message.from_user.id) + "'"
-                cur.execute(zap)
-                conn.commit()
-
                 keyboard = types.ReplyKeyboardMarkup()
                 button_1 = types.KeyboardButton(text="Мужской")
                 keyboard.add(button_1)
@@ -346,10 +309,6 @@ async def registr_sixth_step(message: types.Message, state):
                 print(registr_arr)
                 break
         if next:
-            zap = "update Users set gender = '" + "М" + "' where userid = '" + str(message.from_user.id) + "'"
-            cur.execute(zap)
-            conn.commit()
-
             cont = True
         else:
             await state.finish()
@@ -370,10 +329,6 @@ async def registr_sixth_step(message: types.Message, state):
                 print(registr_arr)
                 break
         if next:
-            zap = "update Users set gender = '" + "Ж" + "' where userid = '" + str(message.from_user.id) + "'"
-            cur.execute(zap)
-            conn.commit()
-
             cont = True
         else:
             await state.finish()
@@ -409,21 +364,15 @@ async def registr_seventh_step(message: types.Message, state):
     cont = False
     pos = None
     if message.text == "Да":
-        next = False
         for i in range(0, len(registr_arr)):
             if registr_arr[i][0] == str(message.from_user.id):
                 registr_arr[i].append(True)
                 registr_arr[i][1] = datetime.now()
-                next = True
+                cont = True
+                pos = i
                 print(registr_arr)
                 break
-        if next:
-            zap = "update Users set sportsman = " + "True" + " where userid = '" + str(message.from_user.id) + "'"
-            cur.execute(zap)
-            conn.commit()
-
-            cont = True
-        else:
+        if not cont:
             await state.finish()
             keyboard = types.ReplyKeyboardMarkup()
             button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
@@ -433,21 +382,15 @@ async def registr_seventh_step(message: types.Message, state):
                 reply_markup=keyboard)
             await Step.repeat_reg.set()
     elif message.text == "Нет":
-        next = False
         for i in range(0, len(registr_arr)):
             if registr_arr[i][0] == str(message.from_user.id):
                 registr_arr[i].append(False)
                 registr_arr[i][1] = datetime.now()
-                next = True
+                cont = True
+                pos = i
                 print(registr_arr)
                 break
-        if next:
-            zap = "update Users set sportsman = " + "False" + " where userid = '" + str(message.from_user.id) + "'"
-            cur.execute(zap)
-            conn.commit()
-
-            cont = True
-        else:
+        if not cont:
             await state.finish()
             keyboard = types.ReplyKeyboardMarkup()
             button_1 = types.KeyboardButton(text="Повторить регистрацию или авторизоваться")
@@ -473,13 +416,6 @@ async def registr_seventh_step(message: types.Message, state):
         await message.answer("Вы успешно зарегистрировались на сервисе CoSport!", reply_markup=keyboard)
         await message.answer("Пожалуйста, передайте вашу геопозицию, чтобы мы могли предлагать вам ближайшие спортплощадки.")
         await message.answer("Вы всегда можете обновить свои координаты в Настройках, чтобы получать наиболее актуальную информацию.")
-
-        for i in range(0, len(registr_arr)):
-
-            if registr_arr[i][0] == str(message.from_user.id):
-                pos = i
-                break
-
         zapros1 = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Phone=' + registr_arr[pos][2]
         zapros2 = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=' + registr_arr[pos][3]
         zapros3 = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Email=' + registr_arr[pos][7]
