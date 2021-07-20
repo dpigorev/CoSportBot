@@ -1,5 +1,6 @@
 import logging
 import time
+from collections import OrderedDict
 import threading
 from aiogram import Bot, Dispatcher, executor, types
 from os import getenv
@@ -23,7 +24,10 @@ class Step(StatesGroup):
     reg_gender = State()
     coordinates = State()
     repeat_reg = State()
-
+    create_teams_one = State()
+    create_teams_two = State()
+    create_teams_three = State()
+    create_teams_four = State()
 
 bot_token = getenv("BOT_TOKEN")
 if not bot_token:
@@ -37,8 +41,10 @@ logging.basicConfig(level=logging.INFO)
 regex_nickname = re.compile("^[A-Za-z0-9]+$")
 regex_email = re.compile("^([a-z0-9_-]+\.)*[a-z0-9_-]+@[a-z0-9_-]+(\.[a-z0-9_-]+)*\.[a-z]{2,6}$")
 regex_pas = re.compile("(?=.*[0-9])(?=.*[!@#$%^&_*])(?=.*[a-z])(?=.*[A-Z])[0-9a-zA-Z!@#$%^_&*]{8,}")
+regex_teamName = re.compile("^[a-zA-Z0-9]+$")
 
 registr_arr = []
+teams_arr = []
 
 async def check(message):
     url = "http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Nickname=qartz"
@@ -54,10 +60,14 @@ async def show(message):
 dp.register_message_handler(show, commands="show")
 
 async def add(message):
-    requests.post('http://167.172.35.241/CSDB/Users/?Content-Type=application/json',
-                  data={'Phone': '79209217373', 'Nickname': 'adfsf', 'Password': 'qwerty',
-                        'Name': 'Ivan', 'Surname': 'Ivanov', 'Email': 'artjom200006@yandex.ru',
-                        'Gender': 'M', 'Profsportman': 'True'})
+    a = requests.post('http://167.172.35.241/CSDB/Users/',
+                  data={"Phone": "79209217373", "Nickname": "adfsf", "Password": "qwerty",
+                        "Name": "Ivan", "Surname": "Ivanov", "Email": "artjom200006@yandex.ru",
+                        "Gender": "m", "Profsportman": True})
+    print("ADD")
+    print(a)
+    url = "http://167.172.35.241/CSDB/Users/"
+
 dp.register_message_handler(add, commands="add")
 
 
@@ -77,6 +87,8 @@ async def autorization(message):
     response1 = response.text
     response1 = response1.replace("[", "")
     response1 = response1.replace("]", "")
+    print("test")
+    print(response1)
     if response1 != "":
         response2 = json.loads(response1)
         Name = response2["Name"]
@@ -91,7 +103,8 @@ async def autorization(message):
         keyboard = types.ReplyKeyboardMarkup()
         button_1 = types.KeyboardButton(text="Зарегистрироваться!")
         keyboard.add(button_1)
-
+        if phone_number[0] == "+":
+            phone_number = phone_number[1:100]
         time = datetime.now()
 
         registr_arr.append([str(message.from_user.id), time, phone_number])
@@ -303,7 +316,7 @@ async def registr_sixth_step(message: types.Message, state):
         next = False
         for i in range(0, len(registr_arr)):
             if registr_arr[i][0] == str(message.from_user.id):
-                registr_arr[i].append("М")
+                registr_arr[i].append("Male")
                 registr_arr[i][1] = datetime.now()
                 next = True
                 print(registr_arr)
@@ -323,7 +336,7 @@ async def registr_sixth_step(message: types.Message, state):
         next = False
         for i in range(0, len(registr_arr)):
             if registr_arr[i][0] == str(message.from_user.id):
-                registr_arr[i].append("Ж")
+                registr_arr[i].append("Female")
                 registr_arr[i][1] = datetime.now()
                 next = True
                 print(registr_arr)
@@ -435,13 +448,21 @@ async def registr_seventh_step(message: types.Message, state):
         if response11 == "" and response21 == "" and response31 == "":
             print("Переданный массив")
             print(registr_arr)
-
-            requests.post('http://167.172.35.241/CSDB/Users/?Content-Type=application/json',
-                          data={'Tg_id': registr_arr[pos][0], 'Phone': registr_arr[pos][2],
+            dt = {'Tg_id': registr_arr[pos][0], 'Phone': registr_arr[pos][2],
                                 'Nickname': registr_arr[pos][3], 'Password': registr_arr[pos][4],
                                 'Name': registr_arr[pos][5], 'Surname': registr_arr[pos][6],
                                 'Email': registr_arr[pos][7], 'Gender': registr_arr[pos][8],
-                                'Profsportman': registr_arr[pos][9]})
+                                'Profsportman': registr_arr[pos][9], 'City': 'Москва'}
+            dtt = json.dumps(dt)
+            url = 'http://167.172.35.241/CSDB/Users/'
+            #requests.post('http://167.172.35.241/CSDB/Users/',
+             #             data={'Tg_id': registr_arr[pos][0], 'Phone': registr_arr[pos][2],
+              #                  'Nickname': registr_arr[pos][3], 'Password': registr_arr[pos][4],
+               #                 'Name': registr_arr[pos][5], 'Surname': registr_arr[pos][6],
+                #                'Email': registr_arr[pos][7], 'Gender': registr_arr[pos][8],
+                 #               'Profsportman': registr_arr[pos][9]})
+            a = requests.post(url, data=dtt)
+            print(a)
             registr_arr.pop(pos)
             print("Массив после чистки")
             print(registr_arr)
@@ -476,9 +497,319 @@ async def get_coordinates(message: types.location, state):
     keyboard.add(button_5)
     button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
     keyboard.add(button_6)
+    lat =  message.location.latitude
+    long = message.location.longitude
+    zapros = 'http://167.172.35.241/CSDB/Users/?Content-Type=application/json&Tg_id=' + str(message.from_user.id)
+    response = requests.get(zapros)
+    response1 = response.text
+    response1 = response1.replace("[", "")
+    response1 = response1.replace("]", "")
+    print(response1)
+    response2 = json.loads(response1)
+    pk = response2["pk"]
+    print(pk)
+    url = 'http://167.172.35.241/CSDB/Users/'+str(pk)
+    response2['GeoCoords_Longitude'] = long
+    response2['GeoCoords_Latitude'] = lat
+    dtt = json.dumps(response2)
+    print(dtt)
+    a = requests.put(url, data=dtt)
     await message.answer("Широта: " + str(message.location.latitude) + "\nДолгота: " + str(message.location.longitude), reply_markup=keyboard)
 dp.register_message_handler(get_coordinates, content_types=["location"])
 
+#Создание команд
+
+async def create_teams_start(message):
+    await Step.create_teams_one.set()
+    keyboard = types.ReplyKeyboardMarkup()
+    button_6 = types.KeyboardButton(text="Назад")
+    keyboard.add(button_6)
+    await message.answer("Введите название команды", reply_markup=keyboard)
+dp.register_message_handler(create_teams_start, Text(equals="Создать команду"))
+
+async def create_teams_1(message, state):
+    if regex_teamName.findall(message.text) != []:
+        if message.text == "Назад":
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Создать команду")
+            keyboard.add(button_1)
+            button_2 = types.KeyboardButton(text="Мои команды")
+            keyboard.add(button_2)
+            button_3 = types.KeyboardButton(text="Создать мероприятие")
+            keyboard.add(button_3)
+            button_4 = types.KeyboardButton(text="Мои мероприятия")
+            keyboard.add(button_4)
+            button_5 = types.KeyboardButton(text="Найти мероприятие")
+            keyboard.add(button_5)
+            button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+            keyboard.add(button_6)
+        else:
+            team_name = message.text
+            time = datetime.now()
+            teams_arr.append([str(message.from_user.id), time, team_name, "Москва"])
+            print(teams_arr)
+            await Step.create_teams_one.set()
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            button_1 = types.KeyboardButton(text="Баскетбол")
+            button_2 = types.KeyboardButton(text="Бег")
+            button_3 = types.KeyboardButton(text="Хоккей")
+            button_4 = types.KeyboardButton(text="Теннис")
+            button_5 = types.KeyboardButton(text="Бейсбол")
+            button_6 = types.KeyboardButton(text="Волейбол")
+            button_7 = types.KeyboardButton(text="Регби")
+            button_8 = types.KeyboardButton(text="Бокс")
+            button_9 = types.KeyboardButton(text="Т.Атлетика")
+            button_10 = types.KeyboardButton(text="Велоспорт")
+            button_11 = types.KeyboardButton(text="Воркаут")
+            button_12 = types.KeyboardButton(text="Настольный теннис")
+            button_13 = types.KeyboardButton(text="Фитнес")
+            button_14 = types.KeyboardButton(text="Н.Игры")
+            button_15 = types.KeyboardButton(text="Скейтборд")
+            button_16 = types.KeyboardButton(text="Футбол")
+            keyboard.insert(button_1)
+            keyboard.insert(button_2)
+            keyboard.insert(button_3)
+            keyboard.insert(button_4)
+            keyboard.insert(button_5)
+            keyboard.insert(button_6)
+            keyboard.insert(button_7)
+            keyboard.insert(button_8)
+            keyboard.insert(button_9)
+            keyboard.insert(button_10)
+            keyboard.insert(button_11)
+            keyboard.insert(button_12)
+            keyboard.insert(button_13)
+            keyboard.insert(button_14)
+            keyboard.insert(button_15)
+            keyboard.insert(button_16)
+            button_prev = types.KeyboardButton(text="Главное меню")
+            keyboard.add(button_prev)
+            await message.answer("Выберите виды спорта, нажимая на соответствующие кнопки", reply_markup=keyboard)
+            await state.finish()
+            await Step.create_teams_two.set()
+    else:
+        await state.finish()
+        await Step.create_teams_one.set()
+        keyboard = types.ReplyKeyboardMarkup()
+        button_6 = types.KeyboardButton(text="Назад")
+        keyboard.add(button_6)
+        await message.answer("Некорректно введено название команды. Пожалуйста, повторите попытку ввода.", reply_markup=keyboard)
+dp.register_message_handler(create_teams_1, state=Step.create_teams_one)
+
+async def create_teams_2(message, state):
+    sport = message.text
+    if sport == "Главное меню" or sport == "Далее" or sport == "Баскетбол" or sport == "Бег" or sport == "Хоккей" or sport == "Теннис" or sport == "Бейсбол" or sport == "Волейбол" or sport == "Хоккей" or sport == "Регби" or sport == "Бокс" or sport == "Т.Атлетика" or sport == "Велоспорт" or sport == "Воркаут" or sport == "Настольный теннис" or sport == "Фитнес"or sport == "Н.Игры"or sport == "Скейтборд" or sport == "Футбол":
+        if sport == "Главное меню":
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Создать команду")
+            keyboard.add(button_1)
+            button_2 = types.KeyboardButton(text="Мои команды")
+            keyboard.add(button_2)
+            button_3 = types.KeyboardButton(text="Создать мероприятие")
+            keyboard.add(button_3)
+            button_4 = types.KeyboardButton(text="Мои мероприятия")
+            keyboard.add(button_4)
+            button_5 = types.KeyboardButton(text="Найти мероприятие")
+            keyboard.add(button_5)
+            button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+            keyboard.add(button_6)
+            await message.answer("Главное меню", reply_markup=keyboard)
+            for i in range(0, len(teams_arr)):
+                if teams_arr[i][0] == str(message.from_user.id):
+                    teams_arr.pop(i)
+                    print(teams_arr)
+                    break
+        elif sport == "Далее":
+            next = False
+            pos = -1
+            for i in range(0, len(teams_arr)):
+                if teams_arr[i][0] == str(message.from_user.id):
+                    teams_arr[i][1] = datetime.now()
+                    next = True
+                    pos = i
+                    print(teams_arr)
+                    print(type(teams_arr))
+                    break
+            if next:
+                teams_arr[pos] = list(OrderedDict.fromkeys(teams_arr[pos]))
+                print(teams_arr)
+                print(type(teams_arr))
+                keyboard = types.ReplyKeyboardMarkup()
+                button_1 = types.KeyboardButton(text="Создать команду")
+                keyboard.add(button_1)
+                button_2 = types.KeyboardButton(text="Мои команды")
+                keyboard.add(button_2)
+                button_3 = types.KeyboardButton(text="Создать мероприятие")
+                keyboard.add(button_3)
+                button_4 = types.KeyboardButton(text="Мои мероприятия")
+                keyboard.add(button_4)
+                button_5 = types.KeyboardButton(text="Найти мероприятие")
+                keyboard.add(button_5)
+                button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+                keyboard.add(button_6)
+                await state.finish()
+                await Step.create_teams_three.set()
+                await message.answer("Выберите спортплощадку по умолчанию", reply_markup=keyboard)
+            else:
+                await state.finish()
+                keyboard = types.ReplyKeyboardMarkup()
+                button_1 = types.KeyboardButton(text="Создать команду")
+                keyboard.add(button_1)
+                button_2 = types.KeyboardButton(text="Мои команды")
+                keyboard.add(button_2)
+                button_3 = types.KeyboardButton(text="Создать мероприятие")
+                keyboard.add(button_3)
+                button_4 = types.KeyboardButton(text="Мои мероприятия")
+                keyboard.add(button_4)
+                button_5 = types.KeyboardButton(text="Найти мероприятие")
+                keyboard.add(button_5)
+                button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+                keyboard.add(button_6)
+                await message.answer("С момента начала создания команды прошло более 24 часов. Повторите создание команды заново.", reply_markup=keyboard)
+        else:
+            next = False
+            for i in range(0, len(teams_arr)):
+                if teams_arr[i][0] == str(message.from_user.id):
+                    teams_arr[i].append(sport)
+                    teams_arr[i][1] = datetime.now()
+                    next = True
+                    print(teams_arr)
+                    break
+            if next:
+                await state.finish()
+                await Step.create_teams_two.set()
+                keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+                button_1 = types.KeyboardButton(text="Баскетбол")
+                button_2 = types.KeyboardButton(text="Бег")
+                button_3 = types.KeyboardButton(text="Хоккей")
+                button_4 = types.KeyboardButton(text="Теннис")
+                button_5 = types.KeyboardButton(text="Бейсбол")
+                button_6 = types.KeyboardButton(text="Волейбол")
+                button_7 = types.KeyboardButton(text="Регби")
+                button_8 = types.KeyboardButton(text="Бокс")
+                button_9 = types.KeyboardButton(text="Т.Атлетика")
+                button_10 = types.KeyboardButton(text="Велоспорт")
+                button_11 = types.KeyboardButton(text="Воркаут")
+                button_12 = types.KeyboardButton(text="Настольный теннис")
+                button_13 = types.KeyboardButton(text="Фитнес")
+                button_14 = types.KeyboardButton(text="Н.Игры")
+                button_15 = types.KeyboardButton(text="Скейтборд")
+                button_16 = types.KeyboardButton(text="Футбол")
+                keyboard.insert(button_1)
+                keyboard.insert(button_2)
+                keyboard.insert(button_3)
+                keyboard.insert(button_4)
+                keyboard.insert(button_5)
+                keyboard.insert(button_6)
+                keyboard.insert(button_7)
+                keyboard.insert(button_8)
+                keyboard.insert(button_9)
+                keyboard.insert(button_10)
+                keyboard.insert(button_11)
+                keyboard.insert(button_12)
+                keyboard.insert(button_13)
+                keyboard.insert(button_14)
+                keyboard.insert(button_15)
+                keyboard.insert(button_16)
+                button_next = types.KeyboardButton(text="Далее")
+                keyboard.add(button_next)
+                button_prev = types.KeyboardButton(text="Главное меню")
+                keyboard.add(button_prev)
+                await message.answer("Выбранный вид спорта сохранён", reply_markup=keyboard)
+
+            else:
+                await state.finish()
+                keyboard = types.ReplyKeyboardMarkup()
+                button_1 = types.KeyboardButton(text="Создать команду")
+                keyboard.add(button_1)
+                button_2 = types.KeyboardButton(text="Мои команды")
+                keyboard.add(button_2)
+                button_3 = types.KeyboardButton(text="Создать мероприятие")
+                keyboard.add(button_3)
+                button_4 = types.KeyboardButton(text="Мои мероприятия")
+                keyboard.add(button_4)
+                button_5 = types.KeyboardButton(text="Найти мероприятие")
+                keyboard.add(button_5)
+                button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+                keyboard.add(button_6)
+                await message.answer(
+                    "С момента начала создания команды прошло более 24 часов. Повторите создание команды заново.",
+                    reply_markup=keyboard)
+    else:
+        next = False
+        length = -1
+        for i in range(0, len(teams_arr)):
+            if teams_arr[i][0] == str(message.from_user.id):
+                next = True
+                length = len(teams_arr[i])
+                print(teams_arr)
+                break
+        if next:
+            await state.finish()
+            await Step.create_teams_two.set()
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            button_1 = types.KeyboardButton(text="Баскетбол")
+            button_2 = types.KeyboardButton(text="Бег")
+            button_3 = types.KeyboardButton(text="Хоккей")
+            button_4 = types.KeyboardButton(text="Теннис")
+            button_5 = types.KeyboardButton(text="Бейсбол")
+            button_6 = types.KeyboardButton(text="Волейбол")
+            button_7 = types.KeyboardButton(text="Регби")
+            button_8 = types.KeyboardButton(text="Бокс")
+            button_9 = types.KeyboardButton(text="Т.Атлетика")
+            button_10 = types.KeyboardButton(text="Велоспорт")
+            button_11 = types.KeyboardButton(text="Воркаут")
+            button_12 = types.KeyboardButton(text="Настольный теннис")
+            button_13 = types.KeyboardButton(text="Фитнес")
+            button_14 = types.KeyboardButton(text="Н.Игры")
+            button_15 = types.KeyboardButton(text="Скейтборд")
+            button_16 = types.KeyboardButton(text="Футбол")
+            keyboard.insert(button_1)
+            keyboard.insert(button_2)
+            keyboard.insert(button_3)
+            keyboard.insert(button_4)
+            keyboard.insert(button_5)
+            keyboard.insert(button_6)
+            keyboard.insert(button_7)
+            keyboard.insert(button_8)
+            keyboard.insert(button_9)
+            keyboard.insert(button_10)
+            keyboard.insert(button_11)
+            keyboard.insert(button_12)
+            keyboard.insert(button_13)
+            keyboard.insert(button_14)
+            keyboard.insert(button_15)
+            keyboard.insert(button_16)
+            if length == 4:
+                button_prev = types.KeyboardButton(text="Главное меню")
+                keyboard.add(button_prev)
+            else:
+                button_next = types.KeyboardButton(text="Далее")
+                keyboard.add(button_next)
+                button_prev = types.KeyboardButton(text="Главное меню")
+                keyboard.add(button_prev)
+            await message.answer("Вид спорта введен некорректно. Пожалуйста, используйте кнопки для выбора вида спорта.", reply_markup=keyboard)
+        else:
+            await state.finish()
+            keyboard = types.ReplyKeyboardMarkup()
+            button_1 = types.KeyboardButton(text="Создать команду")
+            keyboard.add(button_1)
+            button_2 = types.KeyboardButton(text="Мои команды")
+            keyboard.add(button_2)
+            button_3 = types.KeyboardButton(text="Создать мероприятие")
+            keyboard.add(button_3)
+            button_4 = types.KeyboardButton(text="Мои мероприятия")
+            keyboard.add(button_4)
+            button_5 = types.KeyboardButton(text="Найти мероприятие")
+            keyboard.add(button_5)
+            button_6 = types.KeyboardButton(text="⚙ Настройки ⚙")
+            keyboard.add(button_6)
+            await message.answer(
+                "С момента начала создания команды прошло более 24 часов. Повторите создание команды заново.",
+                reply_markup=keyboard)
+dp.register_message_handler(create_teams_2, state=Step.create_teams_two)
 
 check_time = datetime.strptime('2021-07-14 04:00:00.000000', '%Y-%m-%d %H:%M:%S.%f')
 def clear_reg_array():
@@ -488,7 +819,7 @@ def clear_reg_array():
         time.sleep(3)
         secs = check_time - datetime.now()
         secs = secs.seconds
-        print(secs)
+        #print(secs)
         if secs < 3:
             length = len(registr_arr)
             print("До изменений")
